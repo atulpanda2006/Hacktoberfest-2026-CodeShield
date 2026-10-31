@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply bg-navy-950 text-slate-200 antialiased;
+  }
+
+  ::selection {
+    @apply bg-accent-500/30;
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-lg border border-navy-700 bg-navy-900 px-3 py-2 text-sm text-slate-100
+      placeholder:text-slate-500 focus:border-accent-500 focus:outline-none focus:ring-1
+      focus:ring-accent-500/40 disabled:opacity-60;
+  }
+
+  .label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+      transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent-600 text-navy-950 hover:bg-accent-500;
+  }
+
+  .btn-secondary {
+    @apply btn border border-navy-700 bg-navy-800 text-slate-200 hover:border-navy-700 hover:bg-navy-700;
+  }
+
+  .card {
+    @apply rounded-xl border border-navy-800 bg-navy-900/70 p-5 shadow-lg shadow-black/20;
+  }
+
+  .th {
+    @apply px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400;
+  }
+
+  .td {
+    @apply px-3 py-3 align-top text-sm text-slate-300;
+  }
+
+  .link {
+    @apply text-accent-400 hover:text-accent-500 hover:underline;
+  }
+}
