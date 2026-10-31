@@ -1,0 +1,433 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  DEVELOPER
+  MAINTAINER
+  REVIEWER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum ExperienceLevel {
+  JUNIOR
+  MID
+  SENIOR
+  STAFF
+  PRINCIPAL
+}
+
+enum RepositoryVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum RepositoryMemberRole {
+  OWNER
+  MAINTAINER
+  CONTRIBUTOR
+}
+
+enum ContributionType {
+  FEATURE
+  BUG_FIX
+  DOCUMENTATION
+  REFACTORING
+  TESTING
+  OTHER
+}
+
+enum ContributionStatus {
+  SUBMITTED
+  PENDING_VERIFICATION
+  VERIFIED
+  UNDER_AI_ANALYSIS
+  UNDER_COMMUNITY_REVIEW
+  APPROVED
+  REJECTED
+  DISPUTED
+}
+
+enum EvidenceType {
+  PULL_REQUEST
+  COMMIT
+  REVIEW
+  MERGE
+  GITHUB_API
+}
+
+enum VerificationType {
+  PR_EXISTS
+  REPO_MATCH
+  CONTRIBUTOR_IDENTITY
+  PR_STATUS
+  COMMIT_VERIFICATION
+  FULL_VERIFICATION
+}
+
+enum VerificationStatus {
+  PENDING
+  PASSED
+  FAILED
+  ERROR
+}
+
+enum AIAnalysisStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  TIMEOUT
+}
+
+enum ReviewDecision {
+  APPROVE
+  REQUEST_CHANGES
+  REJECT
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+  APPEALED
+}
+
+enum NotificationType {
+  CONTRIBUTION_SUBMITTED
+  CONTRIBUTION_VERIFIED
+  CONTRIBUTION_APPROVED
+  CONTRIBUTION_REJECTED
+  AI_ANALYSIS_COMPLETE
+  REVIEW_RECEIVED
+  DISPUTE_FILED
+  DISPUTE_RESOLVED
+  REPUTATION_UPDATED
+  TRUST_REQUEST
+  GENERAL
+}
+
+// ============================================================
+// MODELS
+// ============================================================
+
+model User {
+  id            String        @id @default(uuid()) @db.Uuid
+  username      String        @unique @db.VarChar(50)
+  email         String        @unique @db.VarChar(255)
+  passwordHash  String        @db.VarChar(255)
+  role          UserRole      @default(DEVELOPER)
+  accountStatus AccountStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  profile              DeveloperProfile?
+  contributions        Contribution[]
+  repositoryMemberships RepositoryMember[]
+  reputation           Reputation?
+  reputationHistory    ReputationHistory[]
+  reviews              Review[]
+  disputesReported     Dispute[]           @relation("DisputeReporter")
+  disputesResolved     Dispute[]           @relation("DisputeResolver")
+  notifications        Notification[]
+
+  // Trust relations
+  trustGiven           TrustRelationship[] @relation("TrustSource")
+  trustReceived        TrustRelationship[] @relation("TrustTarget")
+
+  @@map("users")
+}
+
+model DeveloperProfile {
+  id               String          @id @default(uuid()) @db.Uuid
+  userId           String          @unique @map("user_id") @db.Uuid
+  fullName         String?         @map("full_name") @db.VarChar(100)
+  bio              String?
+  avatarUrl        String?         @map("avatar_url") @db.VarChar(500)
+  githubUsername    String?         @unique @map("github_username") @db.VarChar(50)
+  githubProfileUrl String?         @map("github_profile_url") @db.VarChar(500)
+  skills           String[]        @default([])
+  experienceLevel  ExperienceLevel @default(JUNIOR) @map("experience_level")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("developer_profiles")
+}
+
+model Repository {
+  id                  String               @id @default(uuid()) @db.Uuid
+  githubRepositoryId  String               @unique @map("github_repository_id")
+  name                String               @db.VarChar(255)
+  fullName            String               @unique @map("full_name") @db.VarChar(255)
+  description         String?
+  repositoryUrl       String               @map("repository_url") @db.VarChar(500)
+  ownerGithubUsername String               @map("owner_github_username") @db.VarChar(50)
+  primaryLanguage     String?              @map("primary_language") @db.VarChar(50)
+  visibility          RepositoryVisibility @default(PUBLIC)
+  stars               Int                  @default(0)
+  forks               Int                  @default(0)
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+
+  // Relations
+  members       RepositoryMember[]
+  contributions Contribution[]
+
+  @@map("repositories")
+}
+
+model RepositoryMember {
+  id           String               @id @default(uuid()) @db.Uuid
+  repositoryId String               @map("repository_id") @db.Uuid
+  userId       String               @map("user_id") @db.Uuid
+  role         RepositoryMemberRole @default(CONTRIBUTOR)
+  joinedAt     DateTime             @default(now()) @map("joined_at")
+
+  // Relations
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, userId])
+  @@map("repository_members")
+}
+
+model Contribution {
+  id               String             @id @default(uuid()) @db.Uuid
+  contributorId    String             @map("contributor_id") @db.Uuid
+  repositoryId     String             @map("repository_id") @db.Uuid
+  githubPRNumber   Int?               @map("github_pr_number")
+  githubPRUrl      String?            @map("github_pr_url") @db.VarChar(500)
+  githubPRId       String?            @map("github_pr_id")
+  title            String             @db.VarChar(500)
+  description      String?
+  contributionType ContributionType   @default(OTHER) @map("contribution_type")
+  status           ContributionStatus @default(SUBMITTED)
+  submittedAt      DateTime           @default(now()) @map("submitted_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  // Relations
+  contributor   User                   @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+  repository    Repository             @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  evidence      ContributionEvidence[]
+  verifications VerificationRecord[]
+  aiAnalyses    AIAnalysis[]
+  reviews       Review[]
+  disputes      Dispute[]
+
+  @@unique([repositoryId, githubPRNumber])
+  @@index([contributorId])
+  @@index([repositoryId])
+  @@index([status])
+  @@map("contributions")
+}
+
+model ContributionEvidence {
+  id                String       @id @default(uuid()) @db.Uuid
+  contributionId    String       @map("contribution_id") @db.Uuid
+  evidenceType      EvidenceType @map("evidence_type")
+  externalReference String?      @map("external_reference") @db.VarChar(500)
+  metadata          Json?        @db.JsonB
+  verified          Boolean      @default(false)
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  // Relations
+  contribution Contribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+
+  // Duplicate evidence can never be stored twice for the same contribution
+  @@unique([contributionId, evidenceType, externalReference])
+  @@index([contributionId])
+  @@map("contribution_evidence")
+}
+
+model VerificationRecord {
+  id                  String             @id @default(uuid()) @db.Uuid
+  contributionId      String             @map("contribution_id") @db.Uuid
+  verificationType    VerificationType   @map("verification_type")
+  verificationStatus  VerificationStatus @default(PENDING) @map("verification_status")
+  verificationDetails Json?              @map("verification_details") @db.JsonB
+  verifiedAt          DateTime           @default(now()) @map("verified_at")
+
+  // Relations
+  contribution Contribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+
+  @@index([contributionId])
+  @@map("verification_records")
+}
+
+model AIAnalysis {
+  id                   String           @id @default(uuid()) @db.Uuid
+  contributionId       String           @map("contribution_id") @db.Uuid
+  modelVersion         String           @map("model_version") @db.VarChar(50)
+  qualityScore         Float?           @map("quality_score")
+  riskScore            Float?           @map("risk_score")
+  similarityIndicators Json?            @map("similarity_indicators") @db.JsonB
+  suspiciousIndicators Json?            @map("suspicious_indicators") @db.JsonB
+  explanation          String?
+  confidence           Float?
+  analysisStatus       AIAnalysisStatus @default(PENDING) @map("analysis_status")
+  analyzedAt           DateTime         @default(now()) @map("analyzed_at")
+
+  // Relations
+  contribution Contribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+
+  @@index([contributionId])
+  @@map("ai_analyses")
+}
+
+model Reputation {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @map("user_id") @db.Uuid
+  overallScore     Float    @default(0) @map("overall_score")
+  qualityScore     Float    @default(0) @map("quality_score")
+  reliabilityScore Float    @default(0) @map("reliability_score")
+  consistencyScore Float    @default(0) @map("consistency_score")
+  communityScore   Float    @default(0) @map("community_score")
+  totalContributions Int    @default(0) @map("total_contributions")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reputations")
+}
+
+model ReputationHistory {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  previousScore Float   @map("previous_score")
+  newScore     Float    @map("new_score")
+  changeAmount Float    @map("change_amount")
+  reason       String
+  sourceType   String   @map("source_type") @db.VarChar(50)
+  sourceId     String?  @map("source_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("reputation_history")
+}
+
+model TrustRelationship {
+  id           String   @id @default(uuid()) @db.Uuid
+  sourceUserId String   @map("source_user_id") @db.Uuid
+  targetUserId String   @map("target_user_id") @db.Uuid
+  trustLevel   Int      @default(1) @map("trust_level")
+  trustReason  String?  @map("trust_reason")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  sourceUser User @relation("TrustSource", fields: [sourceUserId], references: [id], onDelete: Cascade)
+  targetUser User @relation("TrustTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceUserId, targetUserId])
+  @@index([sourceUserId])
+  @@index([targetUserId])
+  @@map("trust_relationships")
+}
+
+model Review {
+  id             String         @id @default(uuid()) @db.Uuid
+  contributionId String         @map("contribution_id") @db.Uuid
+  reviewerId     String         @map("reviewer_id") @db.Uuid
+  decision       ReviewDecision
+  rating         Int?
+  comments       String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  contribution Contribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+  reviewer     User         @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@unique([contributionId, reviewerId])
+  @@index([contributionId])
+  @@index([reviewerId])
+  @@map("reviews")
+}
+
+model Dispute {
+  id             String        @id @default(uuid()) @db.Uuid
+  contributionId String        @map("contribution_id") @db.Uuid
+  reportedBy     String        @map("reported_by") @db.Uuid
+  reason         String        @db.VarChar(500)
+  description    String
+  evidence       Json?         @db.JsonB
+  status         DisputeStatus @default(OPEN)
+  resolution     String?
+  resolvedBy     String?       @map("resolved_by") @db.Uuid
+  // Status the contribution had before it was disputed, so a dismissed
+  // dispute can restore it instead of leaving it stuck in DISPUTED.
+  previousContributionStatus ContributionStatus? @map("previous_contribution_status")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  contribution Contribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+  reporter     User         @relation("DisputeReporter", fields: [reportedBy], references: [id], onDelete: Cascade)
+  resolver     User?        @relation("DisputeResolver", fields: [resolvedBy], references: [id])
+
+  @@index([contributionId])
+  @@index([reportedBy])
+  @@index([status])
+  @@map("disputes")
+}
+
+model Notification {
+  id               String           @id @default(uuid()) @db.Uuid
+  userId           String           @map("user_id") @db.Uuid
+  title            String           @db.VarChar(255)
+  message          String
+  notificationType NotificationType @map("notification_type")
+  isRead           Boolean          @default(false) @map("is_read")
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model GitHubAccount {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  githubUserId      String   @map("github_user_id")
+  githubUsername    String   @unique @map("github_username") @db.VarChar(50)
+  encryptedAccessToken String   @map("encrypted_access_token")
+  tokenType         String   @map("token_type") @db.VarChar(50)
+  scopes            String?  @map("scopes") @db.Text
+  connectedAt       DateTime @default(now()) @map("connected_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  expiresAt         DateTime? @map("expires_at")
+
+  // Relations
+  // Belongs to a User via userId (enforced unique: one connection per user)
+
+  @@unique([userId])
+  @@map("github_accounts")
+}

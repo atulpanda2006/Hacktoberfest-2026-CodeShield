@@ -1,0 +1,1014 @@
+openapi: 3.1.0
+info:
+  title: Decentralized Trust Network — Backend API
+  version: 1.0.0
+  description: |
+    Transparent trust and reputation network for open-source contributions.
+
+    All responses use `{ success, message, data?, errors? }`. Paginated responses
+    also include `pagination`. Authentication is a Bearer JWT obtained from
+    `POST /auth/login`.
+
+    Reputation, verification and AI endpoints may return 502/503 when the
+    upstream GitHub or AI service is unavailable; in that case no verified data
+    is fabricated.
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development
+tags:
+  - name: Health
+  - name: Auth
+  - name: Users
+  - name: Profiles
+  - name: Repositories
+  - name: Contributions
+  - name: Verification
+  - name: AI
+  - name: Reputation
+  - name: Trust
+  - name: Reviews
+  - name: Disputes
+  - name: Dashboard
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ContributionId:
+      name: contributionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, enum: [false] }
+        message: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+    Paginated:
+      type: object
+      properties:
+        success: { type: boolean, enum: [true] }
+        message: { type: string }
+        data: { type: array, items: {} }
+        pagination:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            totalPages: { type: integer }
+            hasNextPage: { type: boolean }
+            hasPrevPage: { type: boolean }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [DEVELOPER, MAINTAINER, REVIEWER, ADMIN] }
+        accountStatus: { type: string, enum: [ACTIVE, SUSPENDED, DEACTIVATED] }
+        createdAt: { type: string, format: date-time }
+    ProfileInput:
+      type: object
+      properties:
+        fullName: { type: string, maxLength: 100 }
+        bio: { type: string, maxLength: 2000 }
+        avatarUrl: { type: string, format: uri }
+        githubUsername: { type: string, maxLength: 39 }
+        githubProfileUrl: { type: string, format: uri }
+        skills:
+          type: array
+          maxItems: 30
+          items: { type: string, maxLength: 50 }
+        experienceLevel:
+          type: string
+          enum: [JUNIOR, MID, SENIOR, STAFF, PRINCIPAL]
+    Repository:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        githubRepositoryId: { type: string }
+        name: { type: string }
+        fullName: { type: string }
+        description: { type: [string, "null"] }
+        repositoryUrl: { type: string, format: uri }
+        ownerGithubUsername: { type: string }
+        primaryLanguage: { type: [string, "null"] }
+        visibility: { type: string, enum: [PUBLIC, PRIVATE] }
+        stars: { type: integer }
+        forks: { type: integer }
+    ContributionInput:
+      type: object
+      required: [repositoryId, title]
+      properties:
+        repositoryId: { type: string, format: uuid }
+        githubPRNumber: { type: integer, minimum: 1 }
+        githubPRUrl: { type: string, format: uri }
+        title: { type: string, minLength: 3, maxLength: 500 }
+        description: { type: string, maxLength: 5000 }
+        contributionType:
+          type: string
+          enum: [FEATURE, BUG_FIX, DOCUMENTATION, REFACTORING, TESTING, OTHER]
+    ContributionStatus:
+      type: string
+      enum: [SUBMITTED, PENDING_VERIFICATION, VERIFIED, UNDER_AI_ANALYSIS,
+             UNDER_COMMUNITY_REVIEW, APPROVED, REJECTED, DISPUTED]
+    Contribution:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        contributorId: { type: string, format: uuid }
+        repositoryId: { type: string, format: uuid }
+        githubPRNumber: { type: [integer, "null"] }
+        githubPRUrl: { type: [string, "null"] }
+        title: { type: string }
+        description: { type: [string, "null"] }
+        contributionType: { type: string }
+        status: { $ref: '#/components/schemas/ContributionStatus' }
+        submittedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        repository: { $ref: '#/components/schemas/Repository' }
+        contributor:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            username: { type: string }
+    VerificationResult:
+      type: object
+      properties:
+        contributionId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/ContributionStatus' }
+        verified: { type: boolean }
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              passed: { type: boolean }
+              details: { type: string }
+        evidenceCount: { type: integer }
+    AIAnalysis:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        contributionId: { type: string, format: uuid }
+        modelVersion: { type: string }
+        qualityScore: { type: [number, "null"], minimum: 0, maximum: 100 }
+        riskScore: { type: [number, "null"], minimum: 0, maximum: 100 }
+        confidence: { type: [number, "null"], minimum: 0, maximum: 1 }
+        explanation: { type: [string, "null"] }
+        analysisStatus:
+          type: string
+          enum: [PENDING, IN_PROGRESS, COMPLETED, FAILED, TIMEOUT]
+        analyzedAt: { type: string, format: date-time }
+    Reputation:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        initialized: { type: boolean }
+        overallScore: { type: number, minimum: 0, maximum: 100 }
+        qualityScore: { type: number }
+        reliabilityScore: { type: number }
+        consistencyScore: { type: number }
+        communityScore: { type: number }
+        totalContributions: { type: integer }
+        updatedAt: { type: [string, "null"], format: date-time }
+    TrustRelationship:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        sourceUserId: { type: string, format: uuid }
+        targetUserId: { type: string, format: uuid }
+        trustLevel: { type: integer, minimum: 1, maximum: 5 }
+        trustReason: { type: [string, "null"] }
+        trustLevelMeaning: { type: string }
+        createdAt: { type: string, format: date-time }
+    Review:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        contributionId: { type: string, format: uuid }
+        reviewerId: { type: string, format: uuid }
+        decision: { type: string, enum: [APPROVE, REQUEST_CHANGES, REJECT] }
+        rating: { type: [integer, "null"], minimum: 1, maximum: 5 }
+        comments: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+    Dispute:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        contributionId: { type: string, format: uuid }
+        reportedBy: { type: string, format: uuid }
+        reason: { type: string }
+        description: { type: string }
+        evidence: { type: [object, array, "null"] }
+        status: { type: string, enum: [OPEN, UNDER_REVIEW, RESOLVED, REJECTED, APPEALED] }
+        resolution: { type: [string, "null"] }
+        resolvedBy: { type: [string, "null"], format: uuid }
+        createdAt: { type: string, format: date-time }
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Insufficient permission
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: Duplicate or invalid state transition
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    UpstreamUnavailable:
+      description: GitHub or AI service unavailable — no data was fabricated
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+security: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check including database connectivity
+      responses:
+        '200': { description: Healthy }
+        '503': { description: Database unreachable }
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password]
+              properties:
+                username: { type: string, minLength: 3, maxLength: 50 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 6, maxLength: 128 }
+                role: { type: string, enum: [DEVELOPER, MAINTAINER, REVIEWER, ADMIN] }
+      responses:
+        '201': { description: Created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate and receive a JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { description: Authenticated }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current authenticated user
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Client-side logout acknowledgement
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Logged out }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /users/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Users]
+      summary: Public user lookup
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Users]
+      summary: Update a user (owner or ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                email: { type: string, format: email }
+                role: { type: string, enum: [DEVELOPER, MAINTAINER, REVIEWER, ADMIN] }
+                accountStatus: { type: string, enum: [ACTIVE, SUSPENDED, DEACTIVATED] }
+      responses:
+        '200': { description: Updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /profiles:
+    post:
+      tags: [Profiles]
+      summary: Create the caller's developer profile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileInput' }
+      responses:
+        '201': { description: Created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /profiles/me:
+    get:
+      tags: [Profiles]
+      summary: Caller's profile with contribution statistics
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Profiles]
+      summary: Update the caller's profile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileInput' }
+      responses:
+        '200': { description: Updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /profiles/{userId}:
+    get:
+      tags: [Profiles]
+      summary: Public developer profile with statistics
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /repositories:
+    get:
+      tags: [Repositories]
+      summary: List registered repositories
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: language, in: query, schema: { type: string } }
+        - { name: visibility, in: query, schema: { type: string, enum: [PUBLIC, PRIVATE] } }
+        - { name: sort, in: query, schema: { type: string, enum: [recent, stars, name] } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: Paginated list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Paginated' }
+    post:
+      tags: [Repositories]
+      summary: Register a GitHub repository (verified against the GitHub API)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullName: { type: string, example: expressjs/express }
+                repositoryUrl: { type: string, format: uri }
+                description: { type: string, maxLength: 2000 }
+      responses:
+        '201': { description: Registered }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+  /repositories/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Repositories]
+      summary: Repository detail with members
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      repository: { $ref: '#/components/schemas/Repository' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Repositories]
+      summary: Update editable metadata (repository OWNER or ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: [string, "null"] }
+                visibility: { type: string, enum: [PUBLIC, PRIVATE] }
+      responses:
+        '200': { description: Updated }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Repositories]
+      summary: Delete repository and dependent records
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /repositories/{id}/members:
+    post:
+      tags: [Repositories]
+      summary: Add or update a repository member
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId: { type: string, format: uuid }
+                role: { type: string, enum: [OWNER, MAINTAINER, CONTRIBUTOR] }
+      responses:
+        '200': { description: Saved }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /repositories/{id}/contributions:
+    get:
+      tags: [Repositories]
+      summary: Contributions for a repository
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Paginated list }
+
+  /contributions:
+    get:
+      tags: [Contributions]
+      summary: List contributions
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ContributionStatus' } }
+        - { name: contributionType, in: query, schema: { type: string } }
+        - { name: repositoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: contributorId, in: query, schema: { type: string, format: uuid } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [recent, oldest] } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Paginated list }
+    post:
+      tags: [Contributions]
+      summary: Submit a pull request as a contribution
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContributionInput' }
+      responses:
+        '201': { description: Submitted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /contributions/me:
+    get:
+      tags: [Contributions]
+      summary: Caller's contributions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Paginated list }
+  /contributions/user/{userId}:
+    get:
+      tags: [Contributions]
+      summary: Contributions by developer
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '200': { description: Paginated list }
+  /contributions/repository/{repositoryId}:
+    get:
+      tags: [Contributions]
+      summary: Contributions for a repository
+      parameters:
+        - name: repositoryId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Paginated list }
+  /contributions/{id}:
+    get:
+      tags: [Contributions]
+      summary: Contribution detail with evidence, AI, reviews and disputes
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      contribution: { $ref: '#/components/schemas/Contribution' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /contributions/{id}/status:
+    patch:
+      tags: [Contributions]
+      summary: Advance the contribution lifecycle
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: '#/components/schemas/ContributionStatus' }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200': { description: Updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /verification/{contributionId}:
+    parameters: [{ $ref: '#/components/parameters/ContributionId' }]
+    post:
+      tags: [Verification]
+      summary: Verify a contribution against GitHub and store evidence
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Verification completed (check `verified`)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      verification: { $ref: '#/components/schemas/VerificationResult' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+    get:
+      tags: [Verification]
+      summary: Verification summary and history
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /verification/{contributionId}/evidence:
+    get:
+      tags: [Verification]
+      summary: Stored evidence
+      parameters:
+        - { $ref: '#/components/parameters/ContributionId' }
+        - name: evidenceType
+          in: query
+          schema: { type: string, enum: [PULL_REQUEST, COMMIT, REVIEW, MERGE, GITHUB_API] }
+      responses:
+        '200': { description: OK }
+
+  /ai/analyze/{contributionId}:
+    post:
+      tags: [AI]
+      summary: Send a verified contribution to the AI service and store the result
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/ContributionId' }]
+      responses:
+        '200':
+          description: Analysis stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      analysis: { $ref: '#/components/schemas/AIAnalysis' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502': { description: AI service returned an invalid or mismatched response }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+  /ai/results/{contributionId}:
+    get:
+      tags: [AI]
+      summary: Analysis history and summary
+      parameters: [{ $ref: '#/components/parameters/ContributionId' }]
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /reputation/me:
+    get:
+      tags: [Reputation]
+      summary: Caller's reputation
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /reputation/{userId}:
+    get:
+      tags: [Reputation]
+      summary: Developer reputation (live estimate if never calculated)
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      reputation: { $ref: '#/components/schemas/Reputation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /reputation/{userId}/history:
+    get:
+      tags: [Reputation]
+      summary: Auditable score history
+      parameters:
+        - { $ref: '#/components/parameters/UserId' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Paginated list }
+  /reputation/{userId}/breakdown:
+    get:
+      tags: [Reputation]
+      summary: Score breakdown with weights and component explanations
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '200': { description: OK }
+  /reputation/recalculate/{userId}:
+    post:
+      tags: [Reputation]
+      summary: Recalculate and persist a reputation (self or ADMIN, idempotent)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 500 }
+                force: { type: boolean }
+      responses:
+        '200': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /trust:
+    post:
+      tags: [Trust]
+      summary: Endorse another developer (requires a real interaction)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserId, trustLevel]
+              properties:
+                targetUserId: { type: string, format: uuid }
+                trustLevel: { type: integer, minimum: 1, maximum: 5 }
+                trustReason: { type: string, maxLength: 500 }
+      responses:
+        '201': { description: Created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /trust/me:
+    get:
+      tags: [Trust]
+      summary: Caller's trust network
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+  /trust/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: |
+          For `GET` this is a **user id** (public trust network). For `PATCH` and
+          `DELETE` it is a **trust relationship id**.
+    get:
+      tags: [Trust]
+      summary: Public trust network
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Trust]
+      summary: Update an endorsement (source developer or ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trustLevel: { type: integer, minimum: 1, maximum: 5 }
+                trustReason: { type: [string, "null"] }
+      responses:
+        '200': { description: Updated }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Trust]
+      summary: Remove an endorsement (source developer or ADMIN)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /reviews:
+    post:
+      tags: [Reviews]
+      summary: Review a verified contribution
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contributionId, decision]
+              properties:
+                contributionId: { type: string, format: uuid }
+                decision: { type: string, enum: [APPROVE, REQUEST_CHANGES, REJECT] }
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                comments: { type: string, maxLength: 2000 }
+      responses:
+        '201': { description: Created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /reviews/me:
+    get:
+      tags: [Reviews]
+      summary: Reviews written by the caller
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Paginated list }
+  /reviews/contribution/{contributionId}:
+    get:
+      tags: [Reviews]
+      summary: Reviews for a contribution with aggregate summary
+      parameters:
+        - { $ref: '#/components/parameters/ContributionId' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Paginated list plus `summary` }
+  /reviews/{reviewId}:
+    patch:
+      tags: [Reviews]
+      summary: Update your review
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision: { type: string, enum: [APPROVE, REQUEST_CHANGES, REJECT] }
+                rating: { type: [integer, "null"], minimum: 1, maximum: 5 }
+                comments: { type: [string, "null"] }
+      responses:
+        '200': { description: Updated }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /disputes:
+    post:
+      tags: [Disputes]
+      summary: File a dispute against a contribution
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contributionId, reason, description]
+              properties:
+                contributionId: { type: string, format: uuid }
+                reason: { type: string, minLength: 5, maxLength: 500 }
+                description: { type: string, minLength: 10, maxLength: 5000 }
+                evidence: { type: [object, array] }
+      responses:
+        '201': { description: Filed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /disputes/me:
+    get:
+      tags: [Disputes]
+      summary: Disputes filed or resolved by the caller
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Paginated list }
+  /disputes/contribution/{contributionId}:
+    get:
+      tags: [Disputes]
+      summary: Disputes for a contribution
+      parameters:
+        - { $ref: '#/components/parameters/ContributionId' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Paginated list }
+  /disputes/{id}:
+    get:
+      tags: [Disputes]
+      summary: Dispute detail
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      dispute: { $ref: '#/components/schemas/Dispute' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /disputes/{id}/status:
+    patch:
+      tags: [Disputes]
+      summary: Triage, resolve, dismiss, or appeal a dispute
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [UNDER_REVIEW, RESOLVED, REJECTED, APPEALED]
+                resolution: { type: string, maxLength: 5000 }
+                contributionStatus: { type: string, enum: [APPROVED, REJECTED] }
+      responses:
+        '200': { description: Updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /dashboard/developer:
+    get:
+      tags: [Dashboard]
+      summary: Developer dashboard
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /dashboard/maintainer:
+    get:
+      tags: [Dashboard]
+      summary: Maintainer dashboard
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+  /dashboard/admin:
+    get:
+      tags: [Dashboard]
+      summary: Platform-wide dashboard
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /dashboard/statistics:
+    get:
+      tags: [Dashboard]
+      summary: Public aggregate statistics
+      responses:
+        '200': { description: OK }

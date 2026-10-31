@@ -1,0 +1,47 @@
+{
+  "name": "trust-network-backend",
+  "version": "1.0.0",
+  "description": "Decentralized Trust Network for Open Source Contributions - Backend",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --forceExit --detectOpenHandles",
+    "test:watch": "NODE_OPTIONS='--experimental-vm-modules' jest --watch --forceExit --detectOpenHandles",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "prisma db seed",
+    "test:unit": "NODE_OPTIONS='--experimental-vm-modules' jest tests/unit --forceExit",
+    "test:integration": "NODE_OPTIONS='--experimental-vm-modules' jest tests/integration --forceExit"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.2",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.12.1",
+    "prisma": "^5.22.0",
+    "uuid": "^14.0.3",
+    "winston": "^3.19.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.5.2",
+    "jest": "^30.5.2",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.3.1"
+  }
+}
