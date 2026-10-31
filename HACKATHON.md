@@ -1,1 +1,13 @@
-CodeShield is a platform that helps open-source projects identify suspicious contributors, detect spam submissions, and share information about contributor activities. It allows projects to learn from each other's experiences and make better decisions when reviewing contributions, while ensuring that new contributors are not judged simply for having no previous history.
+# Team Name
+The Gulgule Gulgulas
+
+# Team Members
+-> Kishan Kumar Sah
+-> Vansh Kushwaha
+-> Chayan Leekha
+-> Atul Panda
+
+# Problem Statement
+Problem 7 : Decentralized Trust Network for Open Source Contributions
+
+# Models we use and why
