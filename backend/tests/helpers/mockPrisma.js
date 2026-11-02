@@ -37,6 +37,7 @@ export function createPrismaMock() {
     review: model(),
     dispute: model(),
     notification: model(),
+    gitHubAccount: model(),
   };
 
   prismaMock.$queryRaw = jest.fn().mockResolvedValue([{ '?column?': 1 }]);
